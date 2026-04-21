@@ -12,23 +12,34 @@ interface PacketInputState {
 interface TrafficInputPanelProps {
   packetInput: PacketInputState;
   mode: Mode;
+  queueSize: number;
+  inputError: string | null;
   onPacketInputChange: (next: PacketInputState) => void;
   onSendPacket: () => void;
   onRandomPacket: () => void;
   onModeChange: (mode: Mode) => void;
+  onStopSimulation: () => void;
 }
 
 export function TrafficInputPanel({
   packetInput,
   mode,
+  queueSize,
+  inputError,
   onPacketInputChange,
   onSendPacket,
   onRandomPacket,
   onModeChange,
+  onStopSimulation,
 }: TrafficInputPanelProps) {
   return (
     <section className="rounded-panel border border-stone-200 bg-ivory p-4 shadow-soft">
-      <h2 className="mb-3  text-xl">Traffic Input</h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-xl">Traffic Input</h2>
+        <div className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-muted">
+          Queue: {queueSize}
+        </div>
+      </div>
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -67,6 +78,7 @@ export function TrafficInputPanel({
         <button className="w-full rounded-lg bg-accent px-4 py-2 text-white" type="submit">
           Send Packet
         </button>
+        {inputError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-block">{inputError}</div>}
       </form>
 
       <button className="mt-3 w-full rounded-lg border border-stone-300 px-4 py-2" onClick={onRandomPacket}>
@@ -84,6 +96,20 @@ export function TrafficInputPanel({
             {item}
           </button>
         ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onStopSimulation}
+        className="mt-3 w-full rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm text-ink"
+      >
+        Stop Simulation
+      </button>
+
+      <div className="mt-3 text-xs text-muted">
+        {mode === "MANUAL"
+          ? "Manual mode processes only the packets you send."
+          : "Auto-generated traffic is capped so the simulator stays responsive and does not break under load."}
       </div>
     </section>
   );

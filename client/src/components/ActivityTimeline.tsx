@@ -6,9 +6,9 @@ interface ActivityTimelineProps {
 
 export function ActivityTimeline({ logs }: ActivityTimelineProps) {
   return (
-    <div className="rounded-panel  border border-stone-200 bg-ivory p-4 shadow-soft">
+    <div className="rounded-panel border border-stone-200 bg-ivory p-4 shadow-soft">
       <h3 className=" text-lg">Activity Timeline</h3>
-      <div className="mt-3 max-h-[35vh] space-y-2 overflow-y-auto pr-1 text-sm">
+      <div className="mt-3 max-h-[20vh] space-y-2 overflow-y-auto pr-1 text-sm">
         {logs.length === 0 && <div className="text-muted">No traffic yet. Send a packet to start.</div>}
         {logs.map(({ packet, result }) => (
           <div key={result.packetId + result.timestamp} className="rounded-lg border border-stone-300 bg-white p-2">

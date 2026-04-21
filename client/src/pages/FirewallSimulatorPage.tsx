@@ -9,6 +9,7 @@ import { DecisionResult, Packet, Protocol, Rule, RuleAction, RuleMatchType } fro
 
 type Mode = "MANUAL" | "AUTO" | "ATTACK";
 type Phase = "IDLE" | "MOVING" | "INSPECTING" | "DECIDED";
+const MAX_QUEUED_PACKETS = 10;
 
 const initialRules: Rule[] = [
   { id: crypto.randomUUID(), matchType: "PORT", value: "22", action: "BLOCK", priority: 1, enabled: true },
@@ -23,6 +24,27 @@ function reprioritize(rules: Rule[]): Rule[] {
 
 function sortRulesByPriority(input: Rule[]) {
   return [...input].sort((a, b) => a.priority - b.priority);
+}
+
+function isValidIpv4(value: string) {
+  const trimmed = value.trim();
+  const segments = trimmed.split(".");
+  if (segments.length !== 4) return false;
+
+  return segments.every((segment) => {
+    if (!/^\d+$/.test(segment)) return false;
+    const numeric = Number(segment);
+    return numeric >= 0 && numeric <= 255;
+  });
+}
+
+function parsePort(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+
+  const port = Number(trimmed);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return port;
 }
 
 async function evaluateThroughApi(packet: Packet, sortedRules: Rule[]): Promise<DecisionResult> {
@@ -53,9 +75,11 @@ export function FirewallSimulatorPage() {
   const [mode, setMode] = useState<Mode>("MANUAL");
   const [queue, setQueue] = useState<Packet[]>([]);
   const [activePacket, setActivePacket] = useState<Packet | null>(null);
+  const [activeRules, setActiveRules] = useState<Rule[]>(initialRules);
   const [phase, setPhase] = useState<Phase>("IDLE");
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [activeRuleIndex, setActiveRuleIndex] = useState<number | null>(null);
+  const [inputError, setInputError] = useState<string | null>(null);
 
   const [packetInput, setPacketInput] = useState({
     sourceIp: "192.168.1.15",
@@ -97,7 +121,7 @@ export function FirewallSimulatorPage() {
 
     const ms = mode === "AUTO" ? 1700 : 450;
     const handle = window.setInterval(() => {
-      setQueue((prev) => [...prev, generateRandomPacket()]);
+      setQueue((prev) => (prev.length >= MAX_QUEUED_PACKETS ? prev : [...prev, generateRandomPacket()]));
     }, ms);
 
     return () => window.clearInterval(handle);
@@ -105,9 +129,13 @@ export function FirewallSimulatorPage() {
 
   useEffect(() => {
     if (activePacket || queue.length === 0) return;
+    setDecision(null);
+    setActiveRuleIndex(null);
+    setPhase("IDLE");
+    setActiveRules(sortedRules);
     setActivePacket(queue[0]);
     setQueue((prev) => prev.slice(1));
-  }, [queue, activePacket]);
+  }, [queue, activePacket, sortedRules]);
 
   useEffect(() => {
     if (!activePacket) return;
@@ -120,7 +148,7 @@ export function FirewallSimulatorPage() {
     const inspectTimer = window.setTimeout(() => {
       setPhase("INSPECTING");
 
-      void evaluateThroughApi(activePacket, sortedRules).then((result) => {
+      void evaluateThroughApi(activePacket, activeRules).then((result) => {
         if (cancelled) return;
         setDecision(result);
         setActiveRuleIndex(result.matchedRuleIndex);
@@ -153,21 +181,53 @@ export function FirewallSimulatorPage() {
       if (resolveTimer) window.clearTimeout(resolveTimer);
       if (finishTimer) window.clearTimeout(finishTimer);
     };
-  }, [activePacket, sortedRules]);
+  }, [activePacket, activeRules]);
 
   function enqueuePacket(packet: Packet) {
-    setQueue((prev) => [...prev, packet]);
+    setQueue((prev) => (prev.length >= MAX_QUEUED_PACKETS ? prev : [...prev, packet]));
+  }
+
+  function stopSimulation() {
+    setMode("MANUAL");
+    setQueue([]);
+    setActivePacket(null);
+    setDecision(null);
+    setActiveRuleIndex(null);
+    setPhase("IDLE");
+  }
+
+  function buildManualPacket(): Packet | null {
+    if (!isValidIpv4(packetInput.sourceIp)) {
+      setInputError("Enter a valid source IPv4 address.");
+      return null;
+    }
+
+    if (!isValidIpv4(packetInput.destinationIp)) {
+      setInputError("Enter a valid destination IPv4 address.");
+      return null;
+    }
+
+    const parsedPort = parsePort(packetInput.port);
+    if (parsedPort === null) {
+      setInputError("Enter a valid port between 1 and 65535.");
+      return null;
+    }
+
+    setInputError(null);
+    return {
+      id: crypto.randomUUID(),
+      sourceIp: packetInput.sourceIp.trim(),
+      destinationIp: packetInput.destinationIp.trim(),
+      port: parsedPort,
+      protocol: packetInput.protocol,
+      createdAt: Date.now(),
+    };
   }
 
   function handleManualSend() {
-    enqueuePacket({
-      id: crypto.randomUUID(),
-      sourceIp: packetInput.sourceIp,
-      destinationIp: packetInput.destinationIp,
-      port: Number(packetInput.port),
-      protocol: packetInput.protocol,
-      createdAt: Date.now(),
-    });
+    const packet = buildManualPacket();
+    if (!packet) return;
+    enqueuePacket(packet);
   }
 
   function addRule() {
@@ -231,23 +291,6 @@ export function FirewallSimulatorPage() {
     setRules((prev) => reprioritize(prev.filter((rule) => rule.id !== id)));
   }
 
-  function moveRule(ruleIndex: number, direction: -1 | 1) {
-    const target = ruleIndex + direction;
-    if (target < 0 || target >= sortedRules.length) return;
-
-    const copied = [...sortedRules];
-    const [rule] = copied.splice(ruleIndex, 1);
-    copied.splice(target, 0, rule);
-
-    const nextRules = reprioritize(copied);
-    setRules(nextRules);
-    void fetch(`${API_BASE_URL}/rules/reorder`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ruleIds: nextRules.map((item) => item.id) }),
-    }).catch(() => undefined);
-  }
-
   return (
     <div className="min-h-screen bg-parchment p-6 text-ink">
       <header className="mb-6">
@@ -255,14 +298,20 @@ export function FirewallSimulatorPage() {
         <p className="mt-2 text-sm text-muted">Watch packet decisions unfold rule-by-rule in real time.</p>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_1.6fr_1.1fr]">
+      <div className="grid h-[50vh] grid-cols-1 gap-4 xl:grid-cols-[1.1fr_1.6fr_1.1fr]">
         <TrafficInputPanel
           packetInput={packetInput}
           mode={mode}
-          onPacketInputChange={setPacketInput}
+          queueSize={queue.length + (activePacket ? 1 : 0)}
+          inputError={inputError}
+          onPacketInputChange={(next) => {
+            setInputError(null);
+            setPacketInput(next);
+          }}
           onSendPacket={handleManualSend}
           onRandomPacket={() => enqueuePacket(generateRandomPacket())}
           onModeChange={setMode}
+          onStopSimulation={stopSimulation}
         />
 
         <FirewallVisualizationPanel activePacket={activePacket} phase={phase} decision={decision} />
@@ -273,12 +322,11 @@ export function FirewallSimulatorPage() {
           activeRuleIndex={activeRuleIndex}
           onNewRuleChange={setNewRule}
           onAddRule={addRule}
-          onMoveRule={moveRule}
           onRemoveRule={removeRule}
         />
       </div>
 
-      <section className="mt-4 h-[40vh] grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_2fr]">
+      <section className="mt-4 h-[30vh] overflow-hidden grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_2fr]">
         <StatsPanel stats={stats} />
         <ActivityTimeline logs={logs} />
       </section>

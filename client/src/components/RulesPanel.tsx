@@ -12,7 +12,6 @@ interface RulesPanelProps {
   activeRuleIndex: number | null;
   onNewRuleChange: (next: NewRuleState) => void;
   onAddRule: () => void;
-  onMoveRule: (ruleIndex: number, direction: -1 | 1) => void;
   onRemoveRule: (id: string) => void;
 }
 
@@ -22,7 +21,6 @@ export function RulesPanel({
   activeRuleIndex,
   onNewRuleChange,
   onAddRule,
-  onMoveRule,
   onRemoveRule,
 }: RulesPanelProps) {
   return (
@@ -75,21 +73,7 @@ export function RulesPanel({
               <strong>
                 #{index + 1} {rule.action}
               </strong>
-              <div className="space-x-1">
-                <button
-                  type="button"
-                  className="rounded border border-stone-300 px-1"
-                  onClick={() => onMoveRule(index, -1)}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="rounded border border-stone-300 px-1"
-                  onClick={() => onMoveRule(index, 1)}
-                >
-                  ↓
-                </button>
+              <div>
                 <button
                   type="button"
                   className="rounded border border-stone-300 px-1"
